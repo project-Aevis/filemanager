@@ -121,7 +121,7 @@ Item {
             sourceSize: Qt.size(width, height)
             source: model.thumbnail ? model.thumbnail : ""
             asynchronous: true
-            cache: false
+            cache: true
             smooth: true
             antialiasing: true
 

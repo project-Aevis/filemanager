@@ -33,6 +33,9 @@
 #include <QIcon>
 #include <QDir>
 #include <QTimer>
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
 
 // KIO
 #include <KIO/CopyJob>
@@ -51,6 +54,22 @@ Application::Application(int& argc, char** argv)
     , m_instance(false)
 {
     setQuitOnLastWindowClosed(true);
+
+    // Trim freed memory after startup and periodically
+    QTimer::singleShot(2000, []() {
+#ifdef __GLIBC__
+        malloc_trim(0);
+#endif
+    });
+
+    QTimer *trimTimer = new QTimer(this);
+    trimTimer->setInterval(45000);
+    connect(trimTimer, &QTimer::timeout, this, []() {
+#ifdef __GLIBC__
+        malloc_trim(0);
+#endif
+    });
+    trimTimer->start();
     if (QDBusConnection::sessionBus().registerService("com.cutefish.FileManager")) {
         setOrganizationName("cutefishos");
         setWindowIcon(QIcon::fromTheme("file-manager"));

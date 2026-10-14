@@ -100,9 +100,9 @@ Item {
                 visible: _image.status === Image.Ready
                 fillMode: Image.PreserveAspectFit
                 asynchronous: true
-                cache: false
+                cache: true
 
-                layer.enabled: true
+                layer.enabled: _image.visible
                 layer.effect: OpacityMask {
                     maskSource: Item {
                         width: _image.width

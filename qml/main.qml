@@ -84,7 +84,7 @@ FishUI.Window {
         _sideBar.updateSelection(page.currentUrl)
         _pathBar.updateUrl(page.currentUrl)
         if (page.model)
-            page.model.filterPattern = _searchBar.text
+            page.model.filterPattern = (typeof _searchBar !== "undefined" && typeof _searchBar.text === "string") ? _searchBar.text : ""
         page.focusView()
     }
 

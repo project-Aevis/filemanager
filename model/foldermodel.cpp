@@ -628,7 +628,7 @@ void FolderModel::setFilterPattern(const QString &pattern)
 
     m_filterPattern = pattern;
     const QString trimmed = pattern.trimmed();
-    m_filterPatternMatchAll = (trimmed.isEmpty() || trimmed == QLatin1String("*"));
+    m_filterPatternMatchAll = (trimmed.isEmpty() || trimmed == QLatin1String("*") || trimmed == QLatin1String("undefined"));
 
     if (m_filterPatternMatchAll) {
         m_regExps.clear();
