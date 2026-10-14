@@ -29,11 +29,11 @@ import Cutefish.FileManager 1.0
 Item {
     id: sideBar
 
-    implicitWidth: 190
+    implicitWidth: 210
 
     property string title
-    // The header aligns its own contents to this label's text line.
-    property alias titleItem: titleLabel
+    // macOS Window Controls Spacer
+    property alias titleItem: windowControlsSpacer
     property alias currentIndex: listView.currentIndex
     property alias count: listView.count
     property alias model: listView.model
@@ -58,13 +58,12 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: FishUI.Theme.darkMode ? Qt.lighter(FishUI.Theme.backgroundColor, 1.5)
-                                     : Qt.darker(FishUI.Theme.backgroundColor, 1.05)
-        opacity: 0.7
+        color: FishUI.Theme.darkMode ? "#1A1B26" : "#E1E2E7"
+        opacity: FishUI.Theme.blurEnabled ? 0.85 : 1.0
 
         Behavior on color {
             ColorAnimation {
-                duration: 250
+                duration: 200
                 easing.type: Easing.Linear
             }
         }
@@ -74,20 +73,11 @@ Item {
         anchors.fill: parent
         spacing: 0
 
-        Label {
-            id: titleLabel
-            text: sideBar.title
-            color: root.active ? FishUI.Theme.textColor : FishUI.Theme.disabledTextColor
+        // macOS Window Controls Spacer
+        Item {
+            id: windowControlsSpacer
             Layout.fillWidth: true
             Layout.preferredHeight: root.header.height
-            Layout.minimumHeight: root.header.height
-            Layout.maximumHeight: root.header.height
-            elide: Text.ElideRight
-            leftPadding: FishUI.Units.largeSpacing + FishUI.Units.smallSpacing
-            rightPadding: FishUI.Units.largeSpacing + FishUI.Units.smallSpacing
-            topPadding: FishUI.Units.smallSpacing
-            bottomPadding: 0
-            font.pointSize: 12
         }
 
         ListView {
@@ -99,12 +89,12 @@ Item {
             model: placesModel
             header: Label {
                 width: listView.width
-                height: listView.snap(32)
+                height: listView.snap(30)
                 leftPadding: listView.sideInset + FishUI.Units.smallSpacing
                 verticalAlignment: Text.AlignVCenter
                 text: qsTr("Favorites")
                 color: FishUI.Theme.disabledTextColor
-                font.pointSize: 9
+                font.pointSize: 8
                 font.bold: true
             }
 
@@ -135,14 +125,14 @@ Item {
             section.property: "category"
             section.delegate: Label {
                 width: ListView.view.width
-                height: section === qsTr("Favorites") ? 0 : listView.snap(36)
+                height: section === qsTr("Favorites") ? 0 : listView.snap(32)
                 // ListView controls delegate visibility, including zero-height sections.
                 text: section === qsTr("Favorites") ? "" : section
                 leftPadding: listView.snap(listView.sideInset + FishUI.Units.smallSpacing)
                 rightPadding: FishUI.Units.smallSpacing
                 verticalAlignment: Text.AlignVCenter
                 color: FishUI.Theme.disabledTextColor
-                font.pointSize: 9
+                font.pointSize: 8
                 font.bold: true
             }
 
@@ -275,18 +265,18 @@ Item {
                     x: listView.sideInset
                     width: _item.width - listView.sideInset * 2
                     height: parent.height
-                    radius: FishUI.Theme.mediumRadius
-                    color: _mouseArea.pressed ? Qt.rgba(FishUI.Theme.textColor.r,
-                                                       FishUI.Theme.textColor.g,
-                                                       FishUI.Theme.textColor.b, FishUI.Theme.darkMode ? 0.05 : 0.1) :
-                           _mouseArea.containsMouse && !checked ? Qt.rgba(FishUI.Theme.textColor.r,
-                                                                          FishUI.Theme.textColor.g,
-                                                                          FishUI.Theme.textColor.b, FishUI.Theme.darkMode ? 0.1 : 0.05) :
-                           checked ? Qt.rgba(FishUI.Theme.textColor.r,
-                                             FishUI.Theme.textColor.g,
-                                             FishUI.Theme.textColor.b, 0.05) : "transparent"
-
-                    smooth: true
+                    radius: 8
+                    antialiasing: true
+                    color: {
+                        if (checked)
+                            return FishUI.Theme.highlightColor
+                        else if (_mouseArea.pressed)
+                            return FishUI.Theme.darkMode ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)
+                        else if (_mouseArea.containsMouse)
+                            return FishUI.Theme.darkMode ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.04)
+                        else
+                            return "transparent"
+                    }
                 }
 
                 // Snap icon coordinates as well as size for fractional display scales.
@@ -298,7 +288,7 @@ Item {
                     height: width
 
                     source: model.iconName
-                    color: checked ? FishUI.Theme.highlightColor : FishUI.Theme.textColor
+                    color: checked ? "#FFFFFF" : FishUI.Theme.textColor
                 }
 
                 Label {
@@ -307,7 +297,8 @@ Item {
                     y: listView.snap((_item.height - height) / 2)
                     width: _item.width - x - listView.snap(FishUI.Units.smallSpacing)
                     text: model.name
-                    color: checked ? FishUI.Theme.highlightColor : FishUI.Theme.textColor
+                    color: checked ? "#FFFFFF" : FishUI.Theme.textColor
+                    font.weight: checked ? Font.DemiBold : Font.Normal
                     elide: Text.ElideRight
                 }
             }

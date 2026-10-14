@@ -44,6 +44,7 @@ FishUI.Window {
     maximumHeight: contentHeight
 
     background.color: FishUI.Theme.secondBackgroundColor
+    background.opacity: FishUI.Theme.blurEnabled ? (FishUI.Theme.darkMode ? 0.8 : 0.6) : 1
 
     Component.onCompleted: {
         var items = mimeAppManager.recommendedApps(control.url)

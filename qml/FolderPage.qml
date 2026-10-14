@@ -32,6 +32,7 @@ Item {
 
     property alias currentUrl: dirModel.url
     property alias model: dirModel
+    property alias filterPattern: dirModel.filterPattern
     property alias canGoBack: dirModel.canGoBack
     property alias canGoForward: dirModel.canGoForward
     property Item currentView: _viewLoader.item
@@ -42,6 +43,8 @@ Item {
         var path = currentUrl.toString()
         if (path.indexOf("trash:/") === 0)
             return qsTr("Trash")
+        if (path.indexOf("recentlyused:/") === 0)
+            return qsTr("Recent")
         if (path.indexOf("file://") === 0)
             path = path.substring(7)
         path = path.replace(/\/+$/, "")
@@ -66,6 +69,13 @@ Item {
         id: _background
         anchors.fill: parent
         color: FishUI.Theme.secondBackgroundColor
+
+        Behavior on color {
+            ColorAnimation {
+                duration: 250
+                easing.type: Easing.Linear
+            }
+        }
     }
 
     Label {
@@ -149,6 +159,28 @@ Item {
                 folderPage.focusView()
                 shortCut.install(_viewLoader.item)
             }
+        }
+    }
+
+    ColumnLayout {
+        anchors.centerIn: parent
+        visible: dirModel.filterPattern !== "" && dirModel.count === 0 && dirModel.status !== FM.FolderModel.Listing
+        spacing: FishUI.Units.smallSpacing
+        z: 2
+
+        FishUI.IconItem {
+            Layout.alignment: Qt.AlignHCenter
+            width: 48
+            height: 48
+            source: "edit-find"
+            color: FishUI.Theme.disabledTextColor
+        }
+
+        Label {
+            Layout.alignment: Qt.AlignHCenter
+            text: qsTr("No matching items found")
+            color: FishUI.Theme.disabledTextColor
+            font.pointSize: 11
         }
     }
 

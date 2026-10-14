@@ -109,6 +109,8 @@ private slots:
 
         auto *quickWindow = qobject_cast<QQuickWindow *>(window);
         QVERIFY(quickWindow);
+        quickWindow->requestActivate();
+        quickWindow->setVisible(true);
         QTest::keyClick(quickWindow, Qt::Key_T, Qt::ControlModifier);
         QTRY_COMPARE(evaluate("tabs.length").toInt(), 2);
         QTest::keyClick(quickWindow, Qt::Key_Tab, Qt::ControlModifier);
@@ -153,6 +155,89 @@ private slots:
             QTest::qWait(150);
             QVERIFY(quickWindow->grabWindow().save(qEnvironmentVariable("FILEMANAGER_TEST_SCREENSHOT")));
         }
+    }
+
+    void recentTabAndSidebar()
+    {
+        QTemporaryDir folders;
+        QVERIFY(folders.isValid());
+
+        QQmlApplicationEngine engine;
+        CutefishFM::registerImageProviders(&engine);
+        engine.rootContext()->setContextProperty("arg", QStringLiteral("recentlyused:/files"));
+        engine.load(QUrl("qrc:/qml/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        QObject *window = engine.rootObjects().first();
+        QObject *sideBar = window->findChild<QObject *>("sideBar");
+        QVERIFY(sideBar);
+
+        auto activePage = [&]() {
+            return window->property("_folderPage").value<QObject *>();
+        };
+        auto modelFor = [](QObject *page) {
+            return qobject_cast<FolderModel *>(page->property("model").value<QObject *>());
+        };
+
+        QObject *page = activePage();
+        QVERIFY(page);
+        QCOMPARE(page->property("tabTitle").toString(), QStringLiteral("Recent"));
+        QCOMPARE(sideBar->property("selectedPath").toString(), QStringLiteral("recentlyused:/files"));
+
+        FolderModel *model = modelFor(page);
+        QVERIFY(model);
+        QCOMPARE(model->url(), QStringLiteral("recentlyused:/files"));
+    }
+
+    void searchFiltering()
+    {
+        QTemporaryDir folders;
+        QVERIFY(folders.isValid());
+        QDir dir(folders.path());
+        QFile file1(dir.filePath("document.txt"));
+        QVERIFY(file1.open(QIODevice::WriteOnly));
+        file1.close();
+        QFile file2(dir.filePath("image.png"));
+        QVERIFY(file2.open(QIODevice::WriteOnly));
+        file2.close();
+        QFile file3(dir.filePath("notes.md"));
+        QVERIFY(file3.open(QIODevice::WriteOnly));
+        file3.close();
+
+        QQmlApplicationEngine engine;
+        CutefishFM::registerImageProviders(&engine);
+        engine.rootContext()->setContextProperty("arg", folders.path());
+        engine.load(QUrl("qrc:/qml/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        QObject *window = engine.rootObjects().first();
+        QObject *searchBar = window->findChild<QObject *>("searchBar");
+        QVERIFY(searchBar);
+
+        auto activePage = [&]() {
+            return window->property("_folderPage").value<QObject *>();
+        };
+        auto modelFor = [](QObject *page) {
+            return qobject_cast<FolderModel *>(page->property("model").value<QObject *>());
+        };
+
+        QObject *page = activePage();
+        QVERIFY(page);
+        FolderModel *model = modelFor(page);
+        QVERIFY(model);
+        QTRY_COMPARE(model->count(), 3);
+
+        searchBar->setProperty("text", "doc");
+        QTRY_COMPARE(model->count(), 1);
+        QCOMPARE(model->data(model->index(0, 0), FolderModel::FileNameRole).toString(), QStringLiteral("document.txt"));
+
+        searchBar->setProperty("text", "notes");
+        QTRY_COMPARE(model->count(), 1);
+        QCOMPARE(model->data(model->index(0, 0), FolderModel::FileNameRole).toString(), QStringLiteral("notes.md"));
+
+        searchBar->setProperty("text", "nonexistent");
+        QTRY_COMPARE(model->count(), 0);
+
+        searchBar->setProperty("text", "");
+        QTRY_COMPARE(model->count(), 3);
     }
 };
 

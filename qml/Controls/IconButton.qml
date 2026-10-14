@@ -26,21 +26,16 @@ Item {
     height: 24
 
     property alias source: _image.source
-    property color backgroundColor: FishUI.Theme.darkMode ? Qt.lighter(FishUI.Theme.secondBackgroundColor, 1.3)
-                                                          : FishUI.Theme.secondBackgroundColor
-    property color hoveredColor: FishUI.Theme.darkMode ? Qt.lighter(FishUI.Theme.secondBackgroundColor, 1.7)
-                                                   : Qt.darker(FishUI.Theme.secondBackgroundColor, 1.2)
-    property color pressedColor: FishUI.Theme.darkMode ? Qt.lighter(FishUI.Theme.secondBackgroundColor, 1.4)
-                                                     : Qt.darker(FishUI.Theme.secondBackgroundColor, 1.3)
+    property color backgroundColor: "transparent"
+    property color hoveredColor: FishUI.Theme.darkMode ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)
+    property color pressedColor: FishUI.Theme.darkMode ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.12)
 
     signal clicked()
 
     Rectangle {
         id: _background
         anchors.fill: parent
-        // Same inset as FishUI's window buttons, so both draw the same circle.
-        anchors.margins: Math.round(control.width * 0.1)
-        radius: width / 2
+        radius: 6
         color: !control.enabled ? "transparent"
              : _mouseArea.pressed ? pressedColor
              : _mouseArea.containsMouse ? control.hoveredColor

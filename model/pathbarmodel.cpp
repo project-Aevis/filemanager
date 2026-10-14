@@ -56,6 +56,11 @@ void PathBarModel::setUrl(const QString &url)
             item->name = m_url;
             item->url = m_url;
             m_pathList.append(item);
+        } else if (m_url.startsWith("recentlyused:/")) {
+            PathBarItem *item = new PathBarItem;
+            item->name = m_url;
+            item->url = m_url;
+            m_pathList.append(item);
         } else {
             QDir dir(m_url);
 

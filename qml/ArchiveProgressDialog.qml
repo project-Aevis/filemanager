@@ -31,6 +31,7 @@ FishUI.Window {
     header.height: 40
     headerBackground.color: FishUI.Theme.secondBackgroundColor
     background.color: FishUI.Theme.secondBackgroundColor
+    background.opacity: FishUI.Theme.blurEnabled ? (FishUI.Theme.darkMode ? 0.8 : 0.6) : 1
 
     headerItem: Item {
         Label {

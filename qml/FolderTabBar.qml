@@ -19,6 +19,7 @@ Rectangle {
     signal moveRequested(int from, int to)
 
     color: FishUI.Theme.secondBackgroundColor
+    opacity: FishUI.Theme.blurEnabled ? (FishUI.Theme.darkMode ? 0.85 : 0.85) : 1
     readonly property color pressedColor: Qt.rgba(FishUI.Theme.textColor.r,
         FishUI.Theme.textColor.g, FishUI.Theme.textColor.b, 0.10)
     readonly property color hoverColor: Qt.rgba(FishUI.Theme.textColor.r,
@@ -258,5 +259,13 @@ Rectangle {
             radius: height / 2
             color: addButton.hovered ? control.hoverColor : "transparent"
         }
+    }
+
+    Rectangle {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: 1
+        color: FishUI.Theme.darkMode ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08)
     }
 }

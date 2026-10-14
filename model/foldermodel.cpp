@@ -244,7 +244,8 @@ FolderModel::FolderModel(QObject *parent)
     setFilterCaseSensitivity(Qt::CaseInsensitive);
     setDynamicSortFilter(true);
 
-    sort(m_sortMode, m_sortDesc ? Qt::DescendingOrder : Qt::AscendingOrder);
+    int proxyColumn = (m_sortMode == 8) ? 3 : m_sortMode;
+    sort(proxyColumn, m_sortDesc ? Qt::DescendingOrder : Qt::AscendingOrder);
     createActions();
 
     connect(this, SIGNAL(rowsInserted(QModelIndex, int, int)), SIGNAL(countChanged()));
@@ -319,9 +320,15 @@ QVariant FolderModel::data(const QModelIndex &index, int role) const
                 return dfile.readName();
         }
 
+        if (!item.text().isEmpty())
+            return item.text();
+
         return item.url().fileName();
     }
     case FileNameRole: {
+        if (!item.text().isEmpty())
+            return item.text();
+
         return item.url().fileName();
     }
     case IsDesktopFileRole: {
@@ -338,10 +345,13 @@ QVariant FolderModel::data(const QModelIndex &index, int role) const
     }
     case FileSizeRole: {
         if (item.isDir()) {
-            QDir dir(item.url().toLocalFile());
-            dir.setFilter(QDir::Dirs | QDir::AllEntries | QDir::NoDotAndDotDot);
-            uint count = dir.count();
-            return count == 1 ? tr("%1 item").arg(count) : tr("%1 items").arg(count);
+            QString localDir = item.isLocalFile() ? item.url().toLocalFile() : item.localPath();
+            if (!localDir.isEmpty()) {
+                QDir dir(localDir);
+                dir.setFilter(QDir::Dirs | QDir::AllEntries | QDir::NoDotAndDotDot);
+                uint count = dir.count();
+                return count == 1 ? tr("%1 item").arg(count) : tr("%1 items").arg(count);
+            }
         }
 
         return KIO::convertSize(item.size());
@@ -349,16 +359,19 @@ QVariant FolderModel::data(const QModelIndex &index, int role) const
     case IconNameRole:
         return item.iconName();
     case ThumbnailRole: {
-        if (item.isLocalFile()) {
+        QUrl effectiveUrl = item.isLocalFile() ? item.url() :
+                            (item.targetUrl().isValid() && item.targetUrl().isLocalFile() ? item.targetUrl() :
+                            (!item.localPath().isEmpty() ? QUrl::fromLocalFile(item.localPath()) : QUrl()));
+        if (effectiveUrl.isLocalFile()) {
             // Svg Image
             if (item.mimetype() == "image/svg" ||
                     item.mimetype() == "image/svg+xml") {
-                return item.url();
+                return effectiveUrl;
             }
 
             // Support
             if (isSupportThumbnails(item.mimetype())) {
-                return "image://thumbnailer/" + item.url().toString();
+                return "image://thumbnailer/" + effectiveUrl.toString();
             }
         }
 
@@ -442,16 +455,20 @@ void FolderModel::setUrl(const QString &url)
         return;
 
     bool isTrash = url.startsWith("trash:/");
+    bool isRecent = url.startsWith("recentlyused:/");
     QUrl resolvedNewUrl = resolve(url);
+    if (isRecent) {
+        resolvedNewUrl = QUrl(QStringLiteral("recentlyused:/files"));
+    }
     QFileInfo info(resolvedNewUrl.toLocalFile());
 
-    if (!QFile::exists(resolvedNewUrl.toLocalFile()) && !isTrash) {
+    if (!QFile::exists(resolvedNewUrl.toLocalFile()) && !isTrash && !isRecent) {
         emit notification(tr("The file or folder %1 does not exist.").arg(url));
         return;
     }
 
     // TODO: selected ?
-    if (info.isFile() && !isTrash) {
+    if (info.isFile() && !isTrash && !isRecent) {
         resolvedNewUrl = QUrl::fromLocalFile(info.dir().path());
     }
 
@@ -470,12 +487,13 @@ void FolderModel::setUrl(const QString &url)
 
     beginResetModel();
     m_url = resolvedNewUrl.toString(QUrl::PreferLocalFile);
-    m_dirModel->dirLister()->openUrl(isTrash ? QUrl(QStringLiteral("trash:/")) : resolvedNewUrl);
+    m_dirModel->dirLister()->openUrl(isTrash ? QUrl(QStringLiteral("trash:/")) :
+                                    (isRecent ? QUrl(QStringLiteral("recentlyused:/files")) : resolvedNewUrl));
     clearDragImages();
     m_dragIndexes.clear();
     endResetModel();
 
-    if (isTrash) {
+    if (isTrash || isRecent) {
         refresh();
     }
 
@@ -530,7 +548,8 @@ void FolderModel::setSortMode(int mode)
             setDynamicSortFilter(false);
         } else {
             invalidateIfComplete();
-            sort(m_sortMode, m_sortDesc ? Qt::DescendingOrder : Qt::AscendingOrder);
+            int proxyColumn = (m_sortMode == 8) ? 3 : m_sortMode;
+            sort(proxyColumn, m_sortDesc ? Qt::DescendingOrder : Qt::AscendingOrder);
             setDynamicSortFilter(true);
         }
 
@@ -550,7 +569,8 @@ void FolderModel::setSortDirsFirst(bool enable)
 
         if (m_sortMode != -1 /* Unsorted */) {
             invalidateIfComplete();
-            sort(m_sortMode, m_sortDesc ? Qt::DescendingOrder : Qt::AscendingOrder);
+            int proxyColumn = (m_sortMode == 8) ? 3 : m_sortMode;
+            sort(proxyColumn, m_sortDesc ? Qt::DescendingOrder : Qt::AscendingOrder);
         }
 
         emit sortDirsFirstChanged();
@@ -607,14 +627,25 @@ void FolderModel::setFilterPattern(const QString &pattern)
     }
 
     m_filterPattern = pattern;
-    m_filterPatternMatchAll = (pattern == QLatin1String("*"));
+    const QString trimmed = pattern.trimmed();
+    m_filterPatternMatchAll = (trimmed.isEmpty() || trimmed == QLatin1String("*"));
 
-    const QStringList patterns = pattern.split(QLatin1Char(' '));
-    m_regExps.clear();
-    m_regExps.reserve(patterns.count());
+    if (m_filterPatternMatchAll) {
+        m_regExps.clear();
+        setFilterMode(NoFilter);
+    } else {
+        setFilterMode(FilterShowMatches);
+        const QStringList patterns = trimmed.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        m_regExps.clear();
+        m_regExps.reserve(patterns.count());
 
-    foreach (const QString &pattern, patterns) {
-        m_regExps.append(QRegularExpression::fromWildcard(pattern, Qt::CaseInsensitive));
+        for (const QString &p : patterns) {
+            QString wildcard = p;
+            if (!wildcard.contains(QLatin1Char('*')) && !wildcard.contains(QLatin1Char('?'))) {
+                wildcard = QLatin1Char('*') + wildcard + QLatin1Char('*');
+            }
+            m_regExps.append(QRegularExpression::fromWildcard(wildcard, Qt::CaseInsensitive));
+        }
     }
 
     invalidateFilterIfComplete();
@@ -665,7 +696,9 @@ bool FolderModel::lessThan(const QModelIndex &left, const QModelIndex &right) co
 {
     const KDirModel *dirModel = static_cast<KDirModel *>(sourceModel());
 
-    if (m_sortDirsFirst || left.column() == KDirModel::Size) {
+    const int effectiveMode = (m_sortMode == 8 || left.column() == 3) ? 8 : (m_sortMode != -1 ? m_sortMode : left.column());
+
+    if (m_sortDirsFirst || effectiveMode == KDirModel::Size) {
         bool leftIsDir = isDir(left, dirModel);
         bool rightIsDir = isDir(right, dirModel);
 
@@ -680,10 +713,9 @@ bool FolderModel::lessThan(const QModelIndex &left, const QModelIndex &right) co
 
     const KFileItem leftItem = dirModel->data(left, KDirModel::FileItemRole).value<KFileItem>();
     const KFileItem rightItem = dirModel->data(right, KDirModel::FileItemRole).value<KFileItem>();
-    const int column = left.column();
     int result = 0;
 
-    switch (column) {
+    switch (effectiveMode) {
     case KDirModel::Size: {
         if (isDir(left, dirModel) && isDir(right, dirModel)) {
             const int leftChildCount = dirModel->data(left, KDirModel::ChildCountRole).toInt();
@@ -706,6 +738,38 @@ bool FolderModel::lessThan(const QModelIndex &left, const QModelIndex &right) co
     case KDirModel::ModifiedTime: {
         const long long leftTime = leftItem.entry().numberValue(KIO::UDSEntry::UDS_MODIFICATION_TIME, -1);
         const long long rightTime = rightItem.entry().numberValue(KIO::UDSEntry::UDS_MODIFICATION_TIME, -1);
+        if (leftTime < rightTime)
+            result = -1;
+        else if (leftTime > rightTime)
+            result = +1;
+
+        break;
+    }
+    case 8: { // CreationTime
+        long long leftTime = leftItem.entry().numberValue(KIO::UDSEntry::UDS_CREATION_TIME, -1);
+        long long rightTime = rightItem.entry().numberValue(KIO::UDSEntry::UDS_CREATION_TIME, -1);
+
+        if (leftTime == -1 && leftItem.isLocalFile()) {
+            const QDateTime dt = leftItem.time(KFileItem::FileTimes::CreationTime);
+            if (dt.isValid())
+                leftTime = dt.toSecsSinceEpoch();
+            else {
+                const QDateTime bt = QFileInfo(leftItem.localPath()).birthTime();
+                if (bt.isValid())
+                    leftTime = bt.toSecsSinceEpoch();
+            }
+        }
+        if (rightTime == -1 && rightItem.isLocalFile()) {
+            const QDateTime dt = rightItem.time(KFileItem::FileTimes::CreationTime);
+            if (dt.isValid())
+                rightTime = dt.toSecsSinceEpoch();
+            else {
+                const QDateTime bt = QFileInfo(rightItem.localPath()).birthTime();
+                if (bt.isValid())
+                    rightTime = bt.toSecsSinceEpoch();
+            }
+        }
+
         if (leftTime < rightTime)
             result = -1;
         else if (leftTime > rightTime)
@@ -1050,6 +1114,24 @@ void FolderModel::copy()
         if (!action->isEnabled())
             return;
 
+    const bool isRecent = (resolvedUrl().scheme() == QLatin1String("recentlyused"));
+    if (isRecent) {
+        const QModelIndexList indexes = m_selectionModel->selectedIndexes();
+        QList<QUrl> urls;
+        urls.reserve(indexes.size());
+        for (const QModelIndex &idx : indexes) {
+            KFileItem item = itemForIndex(idx);
+            QUrl target = item.targetUrl().isValid() && item.targetUrl().isLocalFile()
+                          ? item.targetUrl()
+                          : (!item.localPath().isEmpty() ? QUrl::fromLocalFile(item.localPath()) : item.url());
+            urls.append(target);
+        }
+        QMimeData *mimeData = new QMimeData();
+        mimeData->setUrls(urls);
+        QApplication::clipboard()->setMimeData(mimeData);
+        return;
+    }
+
     QMimeData *mimeData = QSortFilterProxyModel::mimeData(m_selectionModel->selectedIndexes());
     QApplication::clipboard()->setMimeData(mimeData);
 }
@@ -1124,26 +1206,42 @@ void FolderModel::openSelected()
     if (resolvedUrl().scheme() == QLatin1String("trash"))
         return;
 
-    const QList<QUrl> urls = selectedUrls();
+    const QModelIndexList indexes = m_selectionModel->selectedIndexes();
+    if (indexes.isEmpty())
+        return;
+
     if (!m_isDesktop) {
-        if (urls.size() == 1 && KFileItem(urls.first()).isDir()) {
-            setUrl(urls.first().toLocalFile());
+        if (indexes.size() == 1) {
+            KFileItem item = itemForIndex(indexes.first());
+            if (item.isDir()) {
+                QUrl target = item.targetUrl().isValid() && item.targetUrl().isLocalFile()
+                              ? item.targetUrl()
+                              : (!item.localPath().isEmpty() ? QUrl::fromLocalFile(item.localPath()) : item.url());
+                setUrl(target.isLocalFile() ? target.toLocalFile() : target.toString());
+                return;
+            }
+        }
+    }
+
+    if (indexes.size() == 1) {
+        KFileItem item = itemForIndex(indexes.first());
+        if (isZipFile(item)) {
+            extractSelectedArchive();
             return;
         }
     }
 
-    if (urls.size() == 1 && isZipFile(KFileItem(urls.first()))) {
-        extractSelectedArchive();
-        return;
-    }
-
-    for (const QUrl &url : urls) {
-        KFileItem item(url);
+    for (const QModelIndex &index : indexes) {
+        KFileItem item = itemForIndex(index);
         QString mimeType = item.mimetype();
+        QUrl effectiveUrl = item.targetUrl().isValid() && item.targetUrl().isLocalFile()
+                            ? item.targetUrl()
+                            : (!item.localPath().isEmpty() ? QUrl::fromLocalFile(item.localPath()) : item.url());
+        QString localFilePath = effectiveUrl.toLocalFile();
 
         // Desktop file.
         if (mimeType == "application/x-desktop") {
-            FileLauncher::self()->launchApp(url.toLocalFile(), "");
+            FileLauncher::self()->launchApp(localFilePath, "");
             continue;
         }
 
@@ -1152,13 +1250,13 @@ void FolderModel::openSelected()
             mimeType == "application/x-sharedlib" ||
             mimeType == "application/x-iso9660-appimage" ||
             mimeType == "application/vnd.appimage") {
-            QFileInfo fileInfo(url.toLocalFile());
+            QFileInfo fileInfo(localFilePath);
             if (!fileInfo.isExecutable()) {
-                QFile file(url.toLocalFile());
+                QFile file(localFilePath);
                 file.setPermissions(file.permissions() | QFile::ExeOwner | QFile::ExeUser | QFile::ExeGroup | QFile::ExeOther);
             }
 
-            FileLauncher::self()->launchExecutable(url.toLocalFile());
+            FileLauncher::self()->launchExecutable(localFilePath);
 
             continue;
         }
@@ -1175,11 +1273,11 @@ void FolderModel::openSelected()
         }
 
         if (!defaultAppDesktopFile.isEmpty()) {
-            FileLauncher::self()->launchApp(defaultAppDesktopFile, url.toLocalFile());
+            FileLauncher::self()->launchApp(defaultAppDesktopFile, localFilePath);
             continue;
         }
 
-        QDesktopServices::openUrl(url);
+        QDesktopServices::openUrl(effectiveUrl);
     }
 }
 
@@ -1351,9 +1449,16 @@ void FolderModel::showOpenWithDialog()
     if (!m_selectionModel->hasSelection())
         return;
 
-    const QList<QUrl> urls = selectedUrls();
+    const QModelIndexList indexes = m_selectionModel->selectedIndexes();
+    if (indexes.isEmpty())
+        return;
 
-    OpenWithDialog *dlg = new OpenWithDialog(urls.first());
+    KFileItem item = itemForIndex(indexes.first());
+    QUrl url = item.targetUrl().isValid() && item.targetUrl().isLocalFile()
+               ? item.targetUrl()
+               : (!item.localPath().isEmpty() ? QUrl::fromLocalFile(item.localPath()) : item.url());
+
+    OpenWithDialog *dlg = new OpenWithDialog(url);
     dlg->show();
 }
 
@@ -1385,7 +1490,16 @@ void FolderModel::moveSelectedToTrash()
         }
     }
 
-    const QList<QUrl> urls = selectedUrls();
+    const QModelIndexList indexes = m_selectionModel->selectedIndexes();
+    QList<QUrl> urls;
+    urls.reserve(indexes.size());
+    for (const QModelIndex &idx : indexes) {
+        KFileItem item = itemForIndex(idx);
+        QUrl target = item.targetUrl().isValid() && item.targetUrl().isLocalFile()
+                      ? item.targetUrl()
+                      : (!item.localPath().isEmpty() ? QUrl::fromLocalFile(item.localPath()) : item.url());
+        urls.append(target);
+    }
     KJobUiDelegate *baseUiDelegate = KIO::createDefaultJobUiDelegate(KJobUiDelegate::AutoHandlingDisabled, nullptr);
     auto *uiDelegate = dynamic_cast<KIO::JobUiDelegate *>(baseUiDelegate);
 
@@ -1563,6 +1677,7 @@ void FolderModel::openContextMenu(QQuickItem *visualParent, Qt::KeyboardModifier
 
     const QModelIndexList indexes = m_selectionModel->selectedIndexes();
     const bool isTrash = (resolvedUrl().scheme() == QLatin1String("trash"));
+    const bool isRecent = (resolvedUrl().scheme() == QLatin1String("recentlyused"));
     QMenu *menu = new QMenu;
 
     // Open folder menu.
@@ -1570,16 +1685,20 @@ void FolderModel::openContextMenu(QQuickItem *visualParent, Qt::KeyboardModifier
         QAction *selectAll = new QAction(tr("Select All"), this);
         connect(selectAll, &QAction::triggered, this, &FolderModel::selectAll);
 
-        menu->addAction(m_actionCollection.action("newFolder"));
+        if (!isRecent) {
+            menu->addAction(m_actionCollection.action("newFolder"));
+        }
 
-        if (!isTrash) {
+        if (!isTrash && !isRecent) {
             QMenu *newMenu = new QMenu(tr("New Documents"));
             newMenu->addAction(m_actionCollection.action("newTextFile"));
             menu->addMenu(newMenu);
         }
 
         menu->addSeparator();
-        menu->addAction(m_actionCollection.action("paste"));
+        if (!isRecent) {
+            menu->addAction(m_actionCollection.action("paste"));
+        }
         menu->addAction(selectAll);
         if (m_actionCollection.action("terminal")->isVisible()) {
             menu->addSeparator();
@@ -1595,7 +1714,9 @@ void FolderModel::openContextMenu(QQuickItem *visualParent, Qt::KeyboardModifier
 
         menu->addSeparator();
         menu->addAction(m_actionCollection.action("emptyTrash"));
-        menu->addAction(m_actionCollection.action("properties"));
+        if (!isRecent) {
+            menu->addAction(m_actionCollection.action("properties"));
+        }
     } else {
         // Open the items menu.
 
@@ -1707,7 +1828,10 @@ void FolderModel::openInNewWindow(const QString &url)
     for (const QModelIndex &index : m_selectionModel->selectedIndexes()) {
         KFileItem item = itemForIndex(index);
         if (item.isDir()) {
-            QProcess::startDetached("cutefish-filemanager", QStringList() << item.url().toLocalFile());
+            QUrl target = item.targetUrl().isValid() && item.targetUrl().isLocalFile()
+                          ? item.targetUrl()
+                          : (!item.localPath().isEmpty() ? QUrl::fromLocalFile(item.localPath()) : item.url());
+            QProcess::startDetached("cutefish-filemanager", QStringList() << (target.isLocalFile() ? target.toLocalFile() : target.toString()));
         }
     }
 }
@@ -1717,8 +1841,12 @@ void FolderModel::openInNewTab()
     const QModelIndexList indexes = m_selectionModel->selectedIndexes();
     for (const QModelIndex &index : indexes) {
         const KFileItem item = itemForIndex(index);
-        if (item.isDir())
-            emit openTabRequested(item.url().toString());
+        if (item.isDir()) {
+            QUrl target = item.targetUrl().isValid() && item.targetUrl().isLocalFile()
+                          ? item.targetUrl()
+                          : (!item.localPath().isEmpty() ? QUrl::fromLocalFile(item.localPath()) : item.url());
+            emit openTabRequested(target.isLocalFile() ? target.toLocalFile() : target.toString());
+        }
     }
 }
 
@@ -1991,7 +2119,7 @@ bool FolderModel::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParen
 bool FolderModel::matchMimeType(const KFileItem &item) const
 {
     if (m_mimeSet.isEmpty()) {
-        return false;
+        return true;
     }
 
     if (m_mimeSet.contains(QLatin1String("all/all")) || m_mimeSet.contains(QLatin1String("all/allfiles"))) {
@@ -2009,9 +2137,9 @@ bool FolderModel::matchPattern(const KFileItem &item) const
     }
 
     const QString name = item.name();
-    QListIterator<QRegularExpression> i(m_regExps);
-    while (i.hasNext()) {
-        if (i.next().match(name).hasMatch()) {
+    const QString text = item.text();
+    for (const QRegularExpression &reg : m_regExps) {
+        if (reg.match(name).hasMatch() || (!text.isEmpty() && reg.match(text).hasMatch())) {
             return true;
         }
     }
@@ -2196,6 +2324,7 @@ void FolderModel::updateActions()
     bool isTrashLink = false;
     bool hasDir = false;
     const bool isTrash = (resolvedUrl().scheme() == QLatin1String("trash"));
+    const bool isRecent = (resolvedUrl().scheme() == QLatin1String("recentlyused"));
 
     if (indexes.isEmpty()) {
         items << rootItem();
@@ -2233,7 +2362,7 @@ void FolderModel::updateActions()
     }
 
     if (QAction *cutAction = m_actionCollection.action(QStringLiteral("cut"))) {
-        cutAction->setVisible(!isTrash);
+        cutAction->setVisible(!isTrash && !isRecent);
         cutAction->setEnabled(rootItem().isWritable());
     }
 
@@ -2246,7 +2375,7 @@ void FolderModel::updateActions()
     }
 
     if (QAction *compress = m_actionCollection.action(QStringLiteral("compress"))) {
-        const bool canCompress = !indexes.isEmpty() && !isTrash && !hasRemoteFiles &&
+        const bool canCompress = !indexes.isEmpty() && !isTrash && !isRecent && !hasRemoteFiles &&
                                  rootItem().isWritable();
         compress->setVisible(canCompress);
         compress->setEnabled(canCompress && !m_archiveJob);
@@ -2259,13 +2388,13 @@ void FolderModel::updateActions()
     }
 
     if (QAction *newFolder = m_actionCollection.action(QStringLiteral("newFolder"))) {
-        newFolder->setVisible(!isTrash);
-        newFolder->setEnabled(rootItem().isWritable());
+        newFolder->setVisible(!isTrash && !isRecent);
+        newFolder->setEnabled(!isRecent && rootItem().isWritable());
     }
 
     if (QAction *newTextFile = m_actionCollection.action(QStringLiteral("newTextFile"))) {
-        newTextFile->setVisible(!isTrash);
-        newTextFile->setEnabled(rootItem().isWritable());
+        newTextFile->setVisible(!isTrash && !isRecent);
+        newTextFile->setEnabled(!isRecent && rootItem().isWritable());
     }
 
     if (QAction *paste = m_actionCollection.action(QStringLiteral("paste"))) {
@@ -2274,19 +2403,19 @@ void FolderModel::updateActions()
         const QMimeData *mimeData = QApplication::clipboard()->mimeData();
         QList<QUrl> urls = mimeData ? KUrlMimeData::urlsFromMimeData(mimeData) : QList<QUrl>();
 
-        if (!urls.isEmpty()) {
+        if (!urls.isEmpty() && !isRecent) {
             if (!rootItem().isNull()) {
                 enable = rootItem().isWritable();
             }
         }
 
         paste->setEnabled(enable);
-        paste->setVisible(!isTrash);
+        paste->setVisible(!isTrash && !isRecent);
     }
 
     if (QAction *rename = m_actionCollection.action(QStringLiteral("rename"))) {
-        rename->setEnabled(itemProperties.supportsMoving());
-        rename->setVisible(!isTrash && !Fm::isFixedFolder(items.first().url()));
+        rename->setEnabled(itemProperties.supportsMoving() && !isRecent);
+        rename->setVisible(!isTrash && !isRecent && !Fm::isFixedFolder(items.first().url()));
     }
 
     if (QAction *trash = m_actionCollection.action("trash")) {
@@ -2313,7 +2442,7 @@ void FolderModel::updateActions()
     }
 
     if (QAction *properties = m_actionCollection.action("properties")) {
-        properties->setVisible(!isTrash);
+        properties->setVisible(!isTrash && (!indexes.isEmpty() || !isRecent));
     }
 
     if (QAction *showHidden = m_actionCollection.action("showHidden")) {

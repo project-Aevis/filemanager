@@ -37,6 +37,7 @@
         <file>qml/Dialogs/EmptyTrashDialog.qml</file>
         <file>qml/Dialogs/OpenWithDialog.qml</file>
         <file>qml/Dialogs/DeleteDialog.qml</file>
+        <file>qml/SearchBar.qml</file>
         <file>templates/TextFile.txt</file>
     </qresource>
 </RCC>

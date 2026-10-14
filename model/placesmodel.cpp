@@ -35,6 +35,10 @@
 PlacesModel::PlacesModel(QObject *parent)
     : QAbstractItemModel(parent)
 {
+    PlacesItem *recentItem = new PlacesItem(tr("Recent"), QUrl(QStringLiteral("recentlyused:/files")));
+    recentItem->setIconName(QStringLiteral("folder-recent"));
+    m_items.append(recentItem);
+
     const QString homePath = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
 
     if (QDir(homePath).exists()) {
@@ -92,7 +96,7 @@ PlacesModel::PlacesModel(QObject *parent)
         const QStringList saved = settings.value(QStringLiteral("favorites")).toStringList();
         for (const QString &entry : saved) {
             const QUrl url(entry);
-            if (!url.isLocalFile())
+            if (!url.isLocalFile() && url != QUrl(QStringLiteral("recentlyused:/files")))
                 continue;
             PlacesItem *favorite = nullptr;
             for (PlacesItem *item : defaults) {

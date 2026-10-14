@@ -43,6 +43,9 @@ Item {
         if (value.indexOf("trash:/") === 0)
             return qsTr("Trash")
 
+        if (value.indexOf("recentlyused:/") === 0)
+            return qsTr("Recent")
+
         var path = value.toString()
         if (path.indexOf("file://") === 0)
             path = path.substring(7)
@@ -201,7 +204,8 @@ Item {
 
             Label {
                 id: _name
-                text: model.name
+                text: (model.name.indexOf("trash:/") === 0) ? qsTr("Trash") :
+                      (model.name.indexOf("recentlyused:/") === 0) ? qsTr("Recent") : model.name
                 anchors.centerIn: parent
                 color: selected ? FishUI.Theme.highlightColor : FishUI.Theme.textColor
             }

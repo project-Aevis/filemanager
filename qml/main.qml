@@ -35,6 +35,7 @@ FishUI.Window {
     visible: true
     title: qsTr("File Manager")
 
+    background.color: "transparent"
     background.opacity: 1
     header.height: 40
     contentTopMargin: 0
@@ -82,7 +83,13 @@ FishUI.Window {
         _pathBar.closeEditor()
         _sideBar.updateSelection(page.currentUrl)
         _pathBar.updateUrl(page.currentUrl)
+        if (page.model)
+            page.model.filterPattern = _searchBar.text
         page.focusView()
+    }
+
+    function focusSearch() {
+        _searchBar.forceFocus()
     }
 
     function moveTab(from, to) {
@@ -103,6 +110,7 @@ FishUI.Window {
     Shortcut { sequence: "Ctrl+W"; onActivated: root.closeTab(root.currentTab) }
     Shortcut { sequence: "Ctrl+Tab"; onActivated: root.currentTab = (root.currentTab + 1) % root.tabs.length }
     Shortcut { sequence: "Ctrl+Shift+Tab"; onActivated: root.currentTab = (root.currentTab + root.tabs.length - 1) % root.tabs.length }
+    Shortcut { sequences: [ StandardKey.Find ]; onActivated: root.focusSearch() }
 
     onClosing: {
         if (root.visibility !== Window.Maximized &&
@@ -169,6 +177,14 @@ FishUI.Window {
             Platform.MenuSeparator {}
 
             Platform.MenuItem {
+                text: qsTr("Search")
+                shortcut: "Ctrl+F"
+                onTriggered: root.focusSearch()
+            }
+
+            Platform.MenuSeparator {}
+
+            Platform.MenuItem {
                 text: qsTr("Cut")
                 onTriggered: root._folderPage.model.cut()
             }
@@ -215,11 +231,11 @@ FishUI.Window {
         RowLayout {
             id: _headerRow
             anchors.fill: parent
-            anchors.leftMargin: _sideBar.width + FishUI.Units.smallSpacing * 1.5
-            anchors.rightMargin: FishUI.Units.smallSpacing
+            anchors.leftMargin: Math.max(FishUI.Units.smallSpacing, _content.x - (parent ? parent.x : 84) + FishUI.Units.smallSpacing)
+            anchors.rightMargin: FishUI.Units.smallSpacing * 1.5
             spacing: FishUI.Units.smallSpacing
 
-            readonly property int buttonSize: 31
+            readonly property int buttonSize: 28
 
             FontMetrics {
                 id: _nameMetrics
@@ -227,8 +243,7 @@ FishUI.Window {
             }
 
             IconButton {
-                Layout.alignment: root.windowButtonsAlignment
-                Layout.topMargin: root.windowButtonsTopMargin
+                Layout.alignment: Qt.AlignVCenter
                 Layout.preferredWidth: _headerRow.buttonSize
                 Layout.preferredHeight: _headerRow.buttonSize
                 enabled: _folderPage && _folderPage.canGoBack
@@ -238,8 +253,7 @@ FishUI.Window {
             }
 
             IconButton {
-                Layout.alignment: root.windowButtonsAlignment
-                Layout.topMargin: root.windowButtonsTopMargin
+                Layout.alignment: Qt.AlignVCenter
                 Layout.preferredWidth: _headerRow.buttonSize
                 Layout.preferredHeight: _headerRow.buttonSize
                 enabled: _folderPage && _folderPage.canGoForward
@@ -251,17 +265,33 @@ FishUI.Window {
             Label {
                 id: _folderName
                 Layout.fillWidth: true
-                Layout.fillHeight: true
-                leftPadding: root.windowButtonsTopMargin
-                topPadding: root.windowButtonsTopMargin / 2
+                Layout.alignment: Qt.AlignVCenter
+                leftPadding: FishUI.Units.smallSpacing
                 color: root.active ? FishUI.Theme.textColor : FishUI.Theme.disabledTextColor
                 font.pointSize: 11
+                font.bold: true
+                elide: Text.ElideRight
                 text: _pathBar.currentName
             }
 
+            SearchBar {
+                id: _searchBar
+                objectName: "searchBar"
+                Layout.alignment: Qt.AlignVCenter
+                Layout.preferredHeight: _headerRow.buttonSize
+                onTextChanged: {
+                    if (root._folderPage && root._folderPage.model) {
+                        root._folderPage.model.filterPattern = text
+                    }
+                }
+                onEscapePressed: {
+                    if (root._folderPage)
+                        root._folderPage.focusView()
+                }
+            }
+
             IconButton {
-                Layout.alignment: root.windowButtonsAlignment
-                Layout.topMargin: root.windowButtonsTopMargin
+                Layout.alignment: Qt.AlignVCenter
                 Layout.preferredWidth: _headerRow.buttonSize
                 Layout.preferredHeight: _headerRow.buttonSize
 
@@ -284,6 +314,7 @@ FishUI.Window {
         SideBar {
             id: _sideBar
             objectName: "sideBar"
+            Layout.preferredWidth: 210
             Layout.fillHeight: true
             title: root.title
             onClicked: _folderPage.openUrl(path)
@@ -291,10 +322,24 @@ FishUI.Window {
             onOpenInNewTab: root.openTab(path)
         }
 
+        // macOS 1px Sidebar / Content Inset Divider
+        Rectangle {
+            Layout.preferredWidth: 1
+            Layout.fillHeight: true
+            color: FishUI.Theme.darkMode ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08)
+            z: 5
+        }
+
         Item {
             id: _content
             Layout.fillWidth: true
             Layout.fillHeight: true
+
+            Rectangle {
+                anchors.fill: parent
+                color: FishUI.Theme.secondBackgroundColor
+                z: -1
+            }
 
             FolderTabBar {
                 id: tabBar
@@ -344,6 +389,14 @@ FishUI.Window {
         height: root.header.height
         anchors.bottom: parent.bottom
         z: 3
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: 1
+            color: FishUI.Theme.darkMode ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08)
+        }
 
         RowLayout {
             anchors.fill: parent

@@ -31,7 +31,7 @@ find_package(KF6Config)
 find_package(KF6XmlGui REQUIRED)
 
 # Where QML modules go, so the desktop plugin lands next to FishUI.
-find_program(QT_PATHS_EXECUTABLE NAMES qtpaths6 REQUIRED)
+find_program(QT_PATHS_EXECUTABLE NAMES qtpaths6 qtpaths PATHS /usr/lib/qt6/bin /usr/lib64/qt6/bin REQUIRED)
 execute_process(COMMAND ${QT_PATHS_EXECUTABLE} -query QT_INSTALL_QML
     OUTPUT_VARIABLE INSTALL_QMLDIR
     OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -161,9 +161,13 @@ if(FILEMANAGER_BUILD_TESTS)
     add_executable(tst_tabs tests/tst_tabs.cpp)
     target_link_libraries(tst_tabs PRIVATE cutefish-filemanager-core Qt6::Test)
     add_test(NAME tabs COMMAND tst_tabs)
-    set_tests_properties(tabs PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+    set_tests_properties(tabs PROPERTIES ENVIRONMENT "QT_QUICK_BACKEND=software")
     add_executable(tst_lifecycle tests/tst_lifecycle.cpp application.cpp dbusinterface.cpp ${DBUS_SOURCES})
     target_link_libraries(tst_lifecycle PRIVATE cutefish-filemanager-core Qt6::Test)
     add_test(NAME lifecycle COMMAND tst_lifecycle)
-    set_tests_properties(lifecycle PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+    set_tests_properties(lifecycle PROPERTIES ENVIRONMENT "QT_QUICK_BACKEND=software")
+    add_executable(tst_placesmodel tests/tst_placesmodel.cpp)
+    target_link_libraries(tst_placesmodel PRIVATE cutefish-filemanager-core Qt6::Test)
+    add_test(NAME placesmodel COMMAND tst_placesmodel)
+    set_tests_properties(placesmodel PROPERTIES ENVIRONMENT "QT_QUICK_BACKEND=software")
 endif()

@@ -30,6 +30,11 @@ FishUI.DesktopMenu {
         onTriggered: root.openTab(root._folderPage.currentUrl)
     }
 
+    FishUI.MenuItem {
+        text: qsTr("Search")
+        onTriggered: root.focusSearch()
+    }
+
     FishUI.MenuSeparator {}
 
     FishUI.MenuItem {
@@ -56,10 +61,17 @@ FishUI.DesktopMenu {
     }
 
     FishUI.MenuItem {
-        text: qsTr("Date")
+        text: qsTr("Modified Date")
         reservesCheckColumn: true
         checked: settings.sortMode === 2
         onTriggered: settings.sortMode = 2
+    }
+
+    FishUI.MenuItem {
+        text: qsTr("Creation Date")
+        reservesCheckColumn: true
+        checked: settings.sortMode === 8
+        onTriggered: settings.sortMode = 8
     }
 
     FishUI.MenuItem {

@@ -104,15 +104,17 @@ void FilePropertiesDialog::init()
 
     QList<QUrl> list;
     for (KFileItem item : m_items) {
-        list.append(item.url());
+        list.append(item.targetUrl().isValid() && item.targetUrl().isLocalFile() ? item.targetUrl() : item.url());
     }
 
     if (!m_multiple) {
         KFileItem item = m_items.first();
-        QFileInfo info(item.url().toLocalFile());
+        QString localFilePath = item.isLocalFile() ? item.url().toLocalFile() :
+                                (!item.localPath().isEmpty() ? item.localPath() : item.targetUrl().toLocalFile());
+        QFileInfo info(localFilePath);
 
         QString path;
-        m_fileName = m_items.first().name();
+        m_fileName = !item.text().isEmpty() ? item.text() : m_items.first().name();
 
         if (item.isDir())
             m_iconName = "folder";

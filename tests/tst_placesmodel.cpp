@@ -57,6 +57,44 @@ private slots:
         PlacesModel empty;
         QCOMPARE(empty.favoriteCount(), 0);
     }
+
+    void defaultFavoritesWithRecent()
+    {
+        QTemporaryDir config;
+        QVERIFY(config.isValid());
+        qputenv("XDG_CONFIG_HOME", config.path().toUtf8());
+
+        PlacesModel model;
+        QVERIFY(model.favoriteCount() > 0);
+        QCOMPARE(model.get(0).value("url").toUrl(), QUrl("recentlyused:/files"));
+        QCOMPARE(model.get(0).value("name").toString(), QStringLiteral("Recent"));
+        QCOMPARE(model.get(0).value("iconName").toString(), QStringLiteral("folder-recent"));
+        QCOMPARE(model.get(0).value("category").toString(), QStringLiteral("Favorites"));
+    }
+
+    void savedFavoritesWithRecent()
+    {
+        QTemporaryDir config;
+        QTemporaryDir folders;
+        QVERIFY(config.isValid());
+        QVERIFY(folders.isValid());
+        qputenv("XDG_CONFIG_HOME", config.path().toUtf8());
+
+        QDir dir(folders.path());
+        QVERIFY(dir.mkdir("testdir"));
+        const QUrl dirUrl = QUrl::fromLocalFile(dir.filePath("testdir"));
+
+        QSettings settings(QStringLiteral("cutefish"), QStringLiteral("filemanager-sidebar"));
+        settings.setValue(QStringLiteral("favorites"), QStringList() << "recentlyused:/files" << dirUrl.toString());
+        settings.sync();
+
+        PlacesModel model;
+        QCOMPARE(model.favoriteCount(), 2);
+        QCOMPARE(model.get(0).value("url").toUrl(), QUrl("recentlyused:/files"));
+        QCOMPARE(model.get(0).value("name").toString(), QStringLiteral("Recent"));
+        QCOMPARE(model.get(0).value("iconName").toString(), QStringLiteral("folder-recent"));
+        QCOMPARE(model.get(1).value("url").toUrl(), dirUrl);
+    }
 };
 
 QTEST_GUILESS_MAIN(PlacesModelTest)
