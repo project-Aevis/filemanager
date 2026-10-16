@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Files
+Name[zh_CN]=文件管理
+GenericName=File Manager
+Comment=Project Aevis File Manager
+Exec=/usr/bin/aevis-filemanager %u
+TryExec=aevis-filemanager
+MimeType=inode/directory;
+Icon=file-system-manager
+Categories=Qt;System;FileTools;FileManager;
+StartupNotify=true
+StartupWMClass=aevis-filemanager
