@@ -56,7 +56,7 @@ ListView {
     signal contextMenuRequested()
 
     clip: true
-    cacheBuffer: width
+    cacheBuffer: Math.max(0, control.height * 1.5)
     reuseItems: true
 
     ScrollBar.vertical: ScrollBar { }

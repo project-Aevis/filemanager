@@ -151,8 +151,10 @@ add_custom_target(translations DEPENDS ${QM_FILES} SOURCES ${TS_FILES})
 add_dependencies(cutefish-filemanager translations)
 
 install(TARGETS cutefish-filemanager RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES cutefish-filemanager.desktop DESTINATION "/usr/share/applications")
+install(FILES cutefish-filemanager.desktop aevis-filemanager.desktop DESTINATION "/usr/share/applications")
 install(FILES ${QM_FILES} DESTINATION /usr/share/cutefish-filemanager/translations)
+install(FILES ${QM_FILES} DESTINATION /usr/share/aevis-filemanager/translations)
+install(CODE "execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink cutefish-filemanager \$ENV{DESTDIR}\${CMAKE_INSTALL_FULL_BINDIR}/aevis-filemanager)")
 
 option(FILEMANAGER_BUILD_TESTS "Build file manager integration tests" OFF)
 if(FILEMANAGER_BUILD_TESTS)

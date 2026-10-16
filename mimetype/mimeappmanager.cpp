@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2021 CutefishOS Team.
+ * Copyright (C) 2026 Project Aevis Contributors.
  *
  * Author:     Reion Wong <reionwong@gmail.com>
  *
@@ -448,7 +449,8 @@ void MimeAppManager::launchTerminal(const QString &path)
     if (m_terminalApps.isEmpty())
         return;
 
-    QSettings settings("cutefishos", "defaultApps");
+    const QString aevisPath = QDir::home().filePath(QStringLiteral(".config/aevis/defaultApps.conf"));
+    QSettings settings(QFile::exists(aevisPath) ? QStringLiteral("aevis") : QStringLiteral("cutefishos"), QStringLiteral("defaultApps"));
     QString defaultTerminal = settings.value("terminal").toString();
     QString command;
 

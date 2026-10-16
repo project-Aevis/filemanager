@@ -7,5 +7,6 @@ Comment=Cutefish File Manager
 Exec=cutefish-filemanager %u
 MimeType=inode/directory;
 Icon=file-system-manager
+NoDisplay=true
 Categories=Qt;System;FileTools;FileManager;
 StartupNotify=true

@@ -190,6 +190,7 @@ public:
     Q_INVOKABLE int fileExtensionBoundary(int row);
 
     Q_INVOKABLE bool hasSelection() const;
+    QModelIndexList selectedRowIndexes() const;
     Q_INVOKABLE bool isSelected(int row) const;
     Q_INVOKABLE bool isBlank(int row) const;
     Q_INVOKABLE void setSelected(int row);
@@ -223,6 +224,7 @@ public:
     Q_INVOKABLE void drop(QQuickItem *target, QObject *dropEvent, int row);
 
     Q_INVOKABLE void setWallpaperSelected();
+    Q_INVOKABLE void openContainingFolder();
 
     Q_INVOKABLE void prepareContextMenu();
     Q_INVOKABLE void openContextMenu(QQuickItem *visualParent = nullptr, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
@@ -383,6 +385,7 @@ private:
     int m_currentIndex;
 
     QTimer *m_updateNeedSelectTimer;
+    mutable QHash<QString, uint> m_dirItemCountCache;
 };
 
 #endif // FOLDERMODEL_H

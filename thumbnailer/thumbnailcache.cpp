@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2021 CutefishOS Team.
+ * Copyright (C) 2026 Project Aevis Contributors.
  *
  * Author:     Reion Wong <reionwong@gmail.com>
  *
@@ -28,6 +29,7 @@
 #include <QFile>
 #include <QDir>
 #include <QUrl>
+#include <QMutexLocker>
 
 static ThumbnailCache *SELF = nullptr;
 
@@ -43,6 +45,7 @@ ThumbnailCache *ThumbnailCache::self()
 ThumbnailCache::ThumbnailCache(QObject *parent)
     : QObject(parent)
 {
+    m_memoryCache.setMaxCost(32 * 1024 * 1024);
     m_thumbnailsDir = QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + QLatin1String("/thumbnails/");
 
     QDir dir(m_thumbnailsDir);
@@ -137,7 +140,104 @@ QString ThumbnailCache::requestThumbnail(const QString &filePath, const QSize &r
     }
 }
 
-QString ThumbnailCache::generateThumbnail(const QString &source, const QString &target, const QSize &requestedSize)
+QImage ThumbnailCache::requestThumbnailImage(const QString &filePath, const QSize &requestedSize)
+{
+    QString path(filePath);
+    if (path.startsWith(QLatin1String("file://"))) {
+        path = path.mid(7);
+    }
+
+    if (!QFile::exists(path)) {
+        return QImage();
+    }
+
+    const int width = requestedSize.width();
+    const int height = requestedSize.height();
+    const QString memKey = QStringLiteral("%1@%2x%3").arg(path).arg(width).arg(height);
+
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_memoryCache.contains(memKey)) {
+            QImage *cached = m_memoryCache.object(memKey);
+            if (cached && !cached->isNull()) {
+                return *cached;
+            }
+        }
+    }
+
+    int cacheSize = 0;
+    if (width <= 128 && height <= 128)
+        cacheSize = 128;
+    else if (width <= 256 && height <= 256)
+        cacheSize = 256;
+    else
+        cacheSize = 512;
+
+    struct CachePool {
+        QString path;
+        int minSize;
+    };
+
+    const static auto pools = {
+        CachePool{ QStringLiteral("/normal/"), 128 },
+        CachePool{ QStringLiteral("/large/"), 256 },
+        CachePool{ QStringLiteral("/x-large/"), 512 },
+        CachePool{ QStringLiteral("/xx-large/"), 1024 },
+    };
+
+    QString thumbDir;
+    const int wants = cacheSize;
+    for (const auto &p : pools) {
+        if (p.minSize < wants) {
+            continue;
+        } else {
+            thumbDir = p.path;
+            break;
+        }
+    }
+
+    QString sizeDir = m_thumbnailsDir + thumbDir;
+    if (!QDir(sizeDir).exists()) {
+        if (QDir().mkpath(sizeDir)) {
+            QFile f(sizeDir);
+            f.setPermissions(QFile::ReadUser | QFile::WriteUser | QFile::ExeUser); // 0700
+        }
+    }
+
+    QByteArray origName;
+    const QFileInfo info(path);
+    const QString canonicalPath = info.canonicalFilePath();
+    origName = QUrl::fromLocalFile(canonicalPath).toEncoded(QUrl::RemovePassword | QUrl::FullyEncoded);
+
+    if (origName.isEmpty()) {
+        return QImage();
+    }
+
+    QCryptographicHash md5(QCryptographicHash::Md5);
+    md5.addData(origName);
+    md5.addData(QByteArray::number(width));
+    md5.addData(QByteArray::number(height));
+    md5.addData(QByteArray::number(info.lastModified().toSecsSinceEpoch()));
+
+    QString thumbnailsName = QString::fromLatin1(md5.result().toHex()) + QLatin1String(".png");
+    QString thumbnailsPath = m_thumbnailsDir + thumbDir + thumbnailsName;
+
+    QImage resultImage;
+    if (QFile::exists(thumbnailsPath)) {
+        resultImage.load(thumbnailsPath);
+    } else {
+        generateThumbnail(path, thumbnailsPath, requestedSize, &resultImage);
+    }
+
+    if (!resultImage.isNull()) {
+        QMutexLocker locker(&m_mutex);
+        m_memoryCache.insert(memKey, new QImage(resultImage), static_cast<int>(resultImage.sizeInBytes()));
+    }
+
+    return resultImage;
+}
+
+QString ThumbnailCache::generateThumbnail(const QString &source, const QString &target, const QSize &requestedSize, QImage *outImage)
 {
     QImageReader reader(source);
     if (reader.canRead()) {
@@ -149,6 +249,8 @@ QString ThumbnailCache::generateThumbnail(const QString &source, const QString &
         reader.setAutoTransform(true);
 
         QImage image(reader.read());
+        if (outImage)
+            *outImage = image;
         return writeCacheFile(target, image);
     }
 

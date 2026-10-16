@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2021 CutefishOS Team.
+ * Copyright (C) 2026 Project Aevis Contributors.
  *
  * Author:     Reion Wong <reion@cutefishos.com>
  *
@@ -27,6 +28,7 @@
 #include <QQmlContext>
 
 #include <QDBusConnection>
+#include <QDBusConnectionInterface>
 #include <QPixmapCache>
 #include <QTranslator>
 #include <QFileInfo>
@@ -70,17 +72,27 @@ Application::Application(int& argc, char** argv)
 #endif
     });
     trimTimer->start();
-    if (QDBusConnection::sessionBus().registerService("com.cutefish.FileManager")) {
-        setOrganizationName("cutefishos");
-        setWindowIcon(QIcon::fromTheme("file-manager"));
+
+    setOrganizationName(QStringLiteral("aevis"));
+    setApplicationName(QStringLiteral("aevis-filemanager"));
+    setDesktopFileName(QStringLiteral("aevis-filemanager"));
+    setWindowIcon(QIcon::fromTheme(QStringLiteral("file-manager")));
+
+    QDBusConnection bus = QDBusConnection::sessionBus();
+    bool registeredAevis = bus.registerService(QStringLiteral("org.aevis.FileManager"));
+    bool registeredCutefish = bus.registerService(QStringLiteral("com.cutefish.FileManager"));
+    if (registeredAevis || registeredCutefish) {
 
         new FileManagerAdaptor(this);
         new DBusInterface;
-        QDBusConnection::sessionBus().registerObject("/FileManager", this);
+        bus.registerObject(QStringLiteral("/FileManager"), this);
 
         // Translations
         QLocale locale;
-        QString qmFilePath = QString("%1/%2.qm").arg("/usr/share/cutefish-filemanager/translations/").arg(locale.name());
+        QString qmFilePath = QStringLiteral("/usr/share/aevis-filemanager/translations/%1.qm").arg(locale.name());
+        if (!QFile::exists(qmFilePath)) {
+            qmFilePath = QStringLiteral("/usr/share/cutefish-filemanager/translations/%1.qm").arg(locale.name());
+        }
         if (QFile::exists(qmFilePath)) {
             QTranslator *translator = new QTranslator(this);
             if (translator->load(qmFilePath)) {

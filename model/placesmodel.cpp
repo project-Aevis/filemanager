@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2021 CutefishOS Team.
+ * Copyright (C) 2026 Project Aevis Contributors.
  *
  * Author:     revenmartin <revenmartin@gmail.com>
  *
@@ -89,7 +90,9 @@ PlacesModel::PlacesModel(QObject *parent)
         m_items.append(item);
     }
 
-    QSettings settings(QStringLiteral("cutefish"), QStringLiteral("filemanager-sidebar"));
+    const QString aevisSidebar = QDir::home().filePath(QStringLiteral(".config/aevis/filemanager-sidebar.conf"));
+    const QString cutefishSidebar = QDir::home().filePath(QStringLiteral(".config/cutefish/filemanager-sidebar.conf"));
+    QSettings settings(QFile::exists(aevisSidebar) ? aevisSidebar : (QFile::exists(cutefishSidebar) ? cutefishSidebar : aevisSidebar), QSettings::IniFormat);
     if (settings.contains(QStringLiteral("favorites"))) {
         const auto defaults = m_items;
         m_items.clear();
@@ -226,8 +229,12 @@ void PlacesModel::saveFavorites()
     QStringList urls;
     for (int row = 0; row < favoriteCount(); ++row)
         urls.append(m_items.at(row)->url().toString());
-    QSettings settings(QStringLiteral("cutefish"), QStringLiteral("filemanager-sidebar"));
+    const QString aevisDir = QDir::home().filePath(QStringLiteral(".config/aevis"));
+    QDir().mkpath(aevisDir);
+    QSettings settings(aevisDir + QStringLiteral("/filemanager-sidebar.conf"), QSettings::IniFormat);
     settings.setValue(QStringLiteral("favorites"), urls);
+    QSettings legacySettings(QStringLiteral("cutefish"), QStringLiteral("filemanager-sidebar"));
+    legacySettings.setValue(QStringLiteral("favorites"), urls);
     emit favoritesChanged();
 }
 

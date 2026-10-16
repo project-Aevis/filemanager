@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2021 CutefishOS Team.
+ * Copyright (C) 2026 Project Aevis Contributors.
  *
  * Author:     Reion Wong <reionwong@gmail.com>
  *
@@ -21,6 +22,9 @@
 #define THUMBNAILCACHE_H
 
 #include <QObject>
+#include <QCache>
+#include <QMutex>
+#include <QImage>
 
 class QImageReader;
 class ThumbnailCache : public QObject
@@ -32,12 +36,15 @@ public:
     explicit ThumbnailCache(QObject *parent = nullptr);
 
     QString requestThumbnail(const QString &filePath, const QSize &requestedSize);
-    QString generateThumbnail(const QString &source, const QString &target, const QSize &requestedSize);
+    QImage requestThumbnailImage(const QString &filePath, const QSize &requestedSize);
+    QString generateThumbnail(const QString &source, const QString &target, const QSize &requestedSize, QImage *outImage = nullptr);
     QString writeCacheFile(const QString &path, const QImage &image);
 
 private:
     // thumbnail cache folder
     QString m_thumbnailsDir;
+    QCache<QString, QImage> m_memoryCache;
+    QMutex m_mutex;
 };
 
 #endif // THUMBNAILCACHE_H

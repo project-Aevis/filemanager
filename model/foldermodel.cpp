@@ -6,6 +6,7 @@
  *   Copyright (C) 2014 by Eike Hein <hein@kde.org>                        *
  *   Copyright (C) 2021 Reven Martin <revenmartin@gmail.com>               *
  *   Copyright (C) 2021 Reion Wong <reionwong@gmail.com>                   *
+ *   Copyright (C) 2026 Project Aevis Contributors.                        *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -133,8 +134,11 @@ static bool sendSystemNotification(const QString &summary, const QString &body)
     if (!interface.isValid())
         return false;
 
+    const QString fmApp = QStandardPaths::findExecutable(QStringLiteral("aevis-filemanager")).isEmpty()
+        ? QStringLiteral("cutefish-filemanager")
+        : QStringLiteral("aevis-filemanager");
     QList<QVariant> arguments;
-    arguments << QStringLiteral("cutefish-filemanager");
+    arguments << fmApp;
     arguments << static_cast<uint>(0);
     arguments << QStringLiteral("system-file-manager");
     arguments << summary;
@@ -174,7 +178,9 @@ FolderModel::FolderModel(QObject *parent)
     , m_currentIndex(-1)
     , m_updateNeedSelectTimer(new QTimer(this))
 {
-    QSettings settings("cutefishos", qApp->applicationName());
+    const QString aevisConfig = QDir::home().filePath(QStringLiteral(".config/aevis/") + qApp->applicationName() + QStringLiteral(".conf"));
+    const QString cutefishConfig = QDir::home().filePath(QStringLiteral(".config/cutefishos/") + qApp->applicationName() + QStringLiteral(".conf"));
+    QSettings settings(QFile::exists(aevisConfig) ? aevisConfig : (QFile::exists(cutefishConfig) ? cutefishConfig : aevisConfig), QSettings::IniFormat);
     m_showHiddenFiles = settings.value("showHiddenFiles", false).toBool();
 
     m_updateNeedSelectTimer->setSingleShot(true);
@@ -347,9 +353,18 @@ QVariant FolderModel::data(const QModelIndex &index, int role) const
         if (item.isDir()) {
             QString localDir = item.isLocalFile() ? item.url().toLocalFile() : item.localPath();
             if (!localDir.isEmpty()) {
-                QDir dir(localDir);
-                dir.setFilter(QDir::Dirs | QDir::AllEntries | QDir::NoDotAndDotDot);
-                uint count = dir.count();
+                auto it = m_dirItemCountCache.constFind(localDir);
+                uint count = 0;
+                if (it != m_dirItemCountCache.constEnd()) {
+                    count = it.value();
+                } else {
+                    QDir dir(localDir);
+                    dir.setFilter(QDir::Dirs | QDir::AllEntries | QDir::NoDotAndDotDot);
+                    count = dir.count();
+                    if (m_dirItemCountCache.size() > 5000)
+                        m_dirItemCountCache.clear();
+                    m_dirItemCountCache.insert(localDir, count);
+                }
                 return count == 1 ? tr("%1 item").arg(count) : tr("%1 items").arg(count);
             }
         }
@@ -459,6 +474,9 @@ void FolderModel::setUrl(const QString &url)
     QUrl resolvedNewUrl = resolve(url);
     if (isRecent) {
         resolvedNewUrl = QUrl(QStringLiteral("recentlyused:/files"));
+        // GNOME Files / Nautilus Recent Files logic: sort by Modified/Creation date descending (latest first)
+        m_sortMode = KDirModel::ModifiedTime;
+        m_sortDesc = true;
     }
     QFileInfo info(resolvedNewUrl.toLocalFile());
 
@@ -467,7 +485,6 @@ void FolderModel::setUrl(const QString &url)
         return;
     }
 
-    // TODO: selected ?
     if (info.isFile() && !isTrash && !isRecent) {
         resolvedNewUrl = QUrl::fromLocalFile(info.dir().path());
     }
@@ -486,12 +503,17 @@ void FolderModel::setUrl(const QString &url)
         m_pathHistory.append(resolvedNewUrl);
 
     beginResetModel();
+    m_dirItemCountCache.clear();
     m_url = resolvedNewUrl.toString(QUrl::PreferLocalFile);
     m_dirModel->dirLister()->openUrl(isTrash ? QUrl(QStringLiteral("trash:/")) :
                                     (isRecent ? QUrl(QStringLiteral("recentlyused:/files")) : resolvedNewUrl));
     clearDragImages();
     m_dragIndexes.clear();
     endResetModel();
+
+    if (isRecent) {
+        sort(KDirModel::ModifiedTime, Qt::DescendingOrder);
+    }
 
     if (isTrash || isRecent) {
         refresh();
@@ -736,8 +758,22 @@ bool FolderModel::lessThan(const QModelIndex &left, const QModelIndex &right) co
         break;
     }
     case KDirModel::ModifiedTime: {
-        const long long leftTime = leftItem.entry().numberValue(KIO::UDSEntry::UDS_MODIFICATION_TIME, -1);
-        const long long rightTime = rightItem.entry().numberValue(KIO::UDSEntry::UDS_MODIFICATION_TIME, -1);
+        long long leftTime = leftItem.entry().numberValue(KIO::UDSEntry::UDS_MODIFICATION_TIME, -1);
+        long long rightTime = rightItem.entry().numberValue(KIO::UDSEntry::UDS_MODIFICATION_TIME, -1);
+
+        if (leftTime <= 0 && leftItem.isLocalFile()) {
+            QFileInfo fi(leftItem.localPath());
+            if (fi.exists()) {
+                leftTime = fi.lastModified().toSecsSinceEpoch();
+            }
+        }
+        if (rightTime <= 0 && rightItem.isLocalFile()) {
+            QFileInfo fi(rightItem.localPath());
+            if (fi.exists()) {
+                rightTime = fi.lastModified().toSecsSinceEpoch();
+            }
+        }
+
         if (leftTime < rightTime)
             result = -1;
         else if (leftTime > rightTime)
@@ -749,24 +785,24 @@ bool FolderModel::lessThan(const QModelIndex &left, const QModelIndex &right) co
         long long leftTime = leftItem.entry().numberValue(KIO::UDSEntry::UDS_CREATION_TIME, -1);
         long long rightTime = rightItem.entry().numberValue(KIO::UDSEntry::UDS_CREATION_TIME, -1);
 
-        if (leftTime == -1 && leftItem.isLocalFile()) {
-            const QDateTime dt = leftItem.time(KFileItem::FileTimes::CreationTime);
-            if (dt.isValid())
-                leftTime = dt.toSecsSinceEpoch();
-            else {
-                const QDateTime bt = QFileInfo(leftItem.localPath()).birthTime();
-                if (bt.isValid())
+        if (leftTime <= 0 && leftItem.isLocalFile()) {
+            QFileInfo fi(leftItem.localPath());
+            if (fi.exists()) {
+                QDateTime bt = fi.birthTime();
+                if (bt.isValid() && bt.toSecsSinceEpoch() > 0)
                     leftTime = bt.toSecsSinceEpoch();
+                else
+                    leftTime = fi.lastModified().toSecsSinceEpoch();
             }
         }
-        if (rightTime == -1 && rightItem.isLocalFile()) {
-            const QDateTime dt = rightItem.time(KFileItem::FileTimes::CreationTime);
-            if (dt.isValid())
-                rightTime = dt.toSecsSinceEpoch();
-            else {
-                const QDateTime bt = QFileInfo(rightItem.localPath()).birthTime();
-                if (bt.isValid())
+        if (rightTime <= 0 && rightItem.isLocalFile()) {
+            QFileInfo fi(rightItem.localPath());
+            if (fi.exists()) {
+                QDateTime bt = fi.birthTime();
+                if (bt.isValid() && bt.toSecsSinceEpoch() > 0)
                     rightTime = bt.toSecsSinceEpoch();
+                else
+                    rightTime = fi.lastModified().toSecsSinceEpoch();
             }
         }
 
@@ -874,6 +910,7 @@ void FolderModel::goForward()
 
 void FolderModel::refresh()
 {
+    m_dirItemCountCache.clear();
     m_dirModel->dirLister()->updateDirectory(m_dirModel->dirLister()->url());
 }
 
@@ -922,6 +959,21 @@ int FolderModel::fileExtensionBoundary(int row)
 bool FolderModel::hasSelection() const
 {
     return m_selectionModel->hasSelection();
+}
+
+QModelIndexList FolderModel::selectedRowIndexes() const
+{
+    QModelIndexList list;
+    if (!m_selectionModel)
+        return list;
+
+    const QModelIndexList selected = m_selectionModel->selectedIndexes();
+    for (const QModelIndex &idx : selected) {
+        if (idx.column() == 0) {
+            list.append(idx);
+        }
+    }
+    return list;
 }
 
 bool FolderModel::isSelected(int row) const
@@ -1114,12 +1166,19 @@ void FolderModel::copy()
         if (!action->isEnabled())
             return;
 
+    QModelIndexList col0Indexes;
+    const QModelIndexList selected = m_selectionModel->selectedIndexes();
+    for (const QModelIndex &idx : selected) {
+        if (idx.column() == 0) {
+            col0Indexes.append(idx);
+        }
+    }
+
     const bool isRecent = (resolvedUrl().scheme() == QLatin1String("recentlyused"));
     if (isRecent) {
-        const QModelIndexList indexes = m_selectionModel->selectedIndexes();
         QList<QUrl> urls;
-        urls.reserve(indexes.size());
-        for (const QModelIndex &idx : indexes) {
+        urls.reserve(col0Indexes.size());
+        for (const QModelIndex &idx : col0Indexes) {
             KFileItem item = itemForIndex(idx);
             QUrl target = item.targetUrl().isValid() && item.targetUrl().isLocalFile()
                           ? item.targetUrl()
@@ -1132,7 +1191,7 @@ void FolderModel::copy()
         return;
     }
 
-    QMimeData *mimeData = QSortFilterProxyModel::mimeData(m_selectionModel->selectedIndexes());
+    QMimeData *mimeData = QSortFilterProxyModel::mimeData(col0Indexes);
     QApplication::clipboard()->setMimeData(mimeData);
 }
 
@@ -1175,7 +1234,8 @@ void FolderModel::paste()
         job->start();
 
         // Clear system clipboard.
-        if (mimeData->hasFormat("application/x-cutefish-cutselection")) {
+        if (mimeData->hasFormat("application/x-cutefish-cutselection") ||
+            mimeData->hasFormat("application/x-aevis-cutselection")) {
             QApplication::clipboard()->clear();
         }
     }
@@ -1190,10 +1250,19 @@ void FolderModel::cut()
         if (!action->isEnabled())
             return;
 
-    QMimeData *mimeData = QSortFilterProxyModel::mimeData(m_selectionModel->selectedIndexes());
+    QModelIndexList col0Indexes;
+    const QModelIndexList selected = m_selectionModel->selectedIndexes();
+    for (const QModelIndex &idx : selected) {
+        if (idx.column() == 0) {
+            col0Indexes.append(idx);
+        }
+    }
+
+    QMimeData *mimeData = QSortFilterProxyModel::mimeData(col0Indexes);
 
     mimeData->setData("application/x-kde-cutselection", QByteArray("1"));
     mimeData->setData("application/x-cutefish-cutselection", QByteArray("1"));
+    mimeData->setData("application/x-aevis-cutselection", QByteArray("1"));
 
     QApplication::clipboard()->setMimeData(mimeData);
 }
@@ -1513,7 +1582,10 @@ void FolderModel::moveSelectedToTrash()
 
 void FolderModel::emptyTrash()
 {
-    QProcess::startDetached("cutefish-filemanager", QStringList() << "-e");
+    const QString fmBin = QStandardPaths::findExecutable(QStringLiteral("aevis-filemanager")).isEmpty()
+        ? QStringLiteral("cutefish-filemanager")
+        : QStringLiteral("aevis-filemanager");
+    QProcess::startDetached(fmBin, QStringList() << "-e");
 }
 
 void FolderModel::keyDeletePress()
@@ -1656,12 +1728,37 @@ void FolderModel::setWallpaperSelected()
     if (!url.isLocalFile())
         return;
 
-    QDBusInterface iface("com.cutefish.Services",
-                         "/com/cutefish/Services/Appearance",
-                         "com.cutefish.Services.Appearance",
+    const QString svc = QDBusInterface("org.aevis.Services", "/org/aevis/Services/Appearance", "org.aevis.Services.Appearance", QDBusConnection::sessionBus()).isValid()
+        ? QStringLiteral("org.aevis.Services")
+        : QStringLiteral("com.cutefish.Services");
+    const QString objPath = (svc == QStringLiteral("org.aevis.Services"))
+        ? QStringLiteral("/org/aevis/Services/Appearance")
+        : QStringLiteral("/com/cutefish/Services/Appearance");
+    QDBusInterface iface(svc,
+                         objPath,
+                         svc + QStringLiteral(".Appearance"),
                          QDBusConnection::sessionBus(), nullptr);
     if (iface.isValid())
         iface.call("setWallpaper", url.toLocalFile());
+}
+
+void FolderModel::openContainingFolder()
+{
+    const QModelIndexList indexes = selectedRowIndexes();
+    if (indexes.isEmpty())
+        return;
+
+    KFileItem item = itemForIndex(indexes.first());
+    QUrl targetUrl = item.targetUrl().isValid() && item.targetUrl().isLocalFile()
+                     ? item.targetUrl()
+                     : (!item.localPath().isEmpty() ? QUrl::fromLocalFile(item.localPath()) : item.url());
+
+    if (targetUrl.isValid() && targetUrl.isLocalFile()) {
+        QFileInfo fi(targetUrl.toLocalFile());
+        if (fi.exists()) {
+            setUrl(fi.dir().absolutePath());
+        }
+    }
 }
 
 void FolderModel::prepareContextMenu()
@@ -1743,6 +1840,10 @@ void FolderModel::openContextMenu(QQuickItem *visualParent, Qt::KeyboardModifier
 
         menu->addAction(m_actionCollection.action("wallpaper"));
         menu->addSeparator();
+        if (isRecent) {
+            menu->addAction(m_actionCollection.action("openContainingFolder"));
+            menu->addSeparator();
+        }
         menu->addAction(m_actionCollection.action("properties"));
     }
 
@@ -1804,7 +1905,10 @@ void FolderModel::openInTerminal()
 
 void FolderModel::openChangeWallpaperDialog()
 {
-    QProcess::startDetached("cutefish-settings", QStringList() << "-m" << "background");
+    const QString settingsBin = QStandardPaths::findExecutable(QStringLiteral("aevis-settings")).isEmpty()
+        ? QStringLiteral("cutefish-settings")
+        : QStringLiteral("aevis-settings");
+    QProcess::startDetached(settingsBin, QStringList() << "-m" << "background");
 }
 
 void FolderModel::openDeleteDialog()
@@ -1816,8 +1920,12 @@ void FolderModel::openDeleteDialog()
 
 void FolderModel::openInNewWindow(const QString &url)
 {
+    const QString fmBin = QStandardPaths::findExecutable(QStringLiteral("aevis-filemanager")).isEmpty()
+        ? QStringLiteral("cutefish-filemanager")
+        : QStringLiteral("aevis-filemanager");
+
     if (!url.isEmpty()) {
-        QProcess::startDetached("cutefish-filemanager", QStringList() << url);
+        QProcess::startDetached(fmBin, QStringList() << url);
         return;
     }
 
@@ -1831,7 +1939,7 @@ void FolderModel::openInNewWindow(const QString &url)
             QUrl target = item.targetUrl().isValid() && item.targetUrl().isLocalFile()
                           ? item.targetUrl()
                           : (!item.localPath().isEmpty() ? QUrl::fromLocalFile(item.localPath()) : item.url());
-            QProcess::startDetached("cutefish-filemanager", QStringList() << (target.isLocalFile() ? target.toLocalFile() : target.toString()));
+            QProcess::startDetached(fmBin, QStringList() << (target.isLocalFile() ? target.toLocalFile() : target.toString()));
         }
     }
 }
@@ -2160,8 +2268,12 @@ void FolderModel::setShowHiddenFiles(bool showHiddenFiles)
         m_dirLister->setShowHiddenFiles(m_showHiddenFiles);
         m_dirLister->emitChanges();
 
-        QSettings settings("cutefishos", qApp->applicationName());
+        const QString aevisDir = QDir::home().filePath(QStringLiteral(".config/aevis"));
+        QDir().mkpath(aevisDir);
+        QSettings settings(aevisDir + QStringLiteral("/") + qApp->applicationName() + QStringLiteral(".conf"), QSettings::IniFormat);
         settings.setValue("showHiddenFiles", m_showHiddenFiles);
+        QSettings legacySettings("cutefishos", qApp->applicationName());
+        legacySettings.setValue("showHiddenFiles", m_showHiddenFiles);
 
         emit showHiddenFilesChanged();
     }
@@ -2291,8 +2403,11 @@ void FolderModel::createActions()
     QObject::connect(openInNewWindow, &QAction::triggered, this, [=] { this->openInNewWindow(); });
     QAction *openInNewTab = new QAction(tr("Open In New Tab"), this);
     connect(openInNewTab, &QAction::triggered, this, &FolderModel::openInNewTab);
-    m_actionCollection.addAction(QStringLiteral("openInNewTab"), openInNewTab);
+    QAction *openContainingFolder = new QAction(tr("Show in Parent Folder"), this);
+    connect(openContainingFolder, &QAction::triggered, this, &FolderModel::openContainingFolder);
+    m_actionCollection.addAction(QStringLiteral("openContainingFolder"), openContainingFolder);
 
+    m_actionCollection.addAction(QStringLiteral("openInNewTab"), openInNewTab);
     m_actionCollection.addAction(QStringLiteral("open"), open);
     m_actionCollection.addAction(QStringLiteral("openWith"), openWith);
     m_actionCollection.addAction(QStringLiteral("compress"), compress);

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2021 CutefishOS Team.
+ * Copyright (C) 2026 Project Aevis Contributors.
  *
  * Author:     revenmartin <revenmartin@gmail.com>
  *
@@ -58,14 +59,23 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: FishUI.Theme.darkMode ? "#1A1B26" : "#E1E2E7"
-        opacity: FishUI.Theme.blurEnabled ? 0.85 : 1.0
+        color: FishUI.Theme.darkMode
+               ? Qt.rgba(0.10, 0.10, 0.14, FishUI.Theme.blurEnabled ? 0.76 : 0.98)
+               : Qt.rgba(0.95, 0.95, 0.97, FishUI.Theme.blurEnabled ? 0.72 : 0.98)
 
         Behavior on color {
             ColorAnimation {
                 duration: 200
                 easing.type: Easing.Linear
             }
+        }
+
+        Rectangle {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: 1
+            color: FishUI.Theme.glassBorderColor
         }
     }
 

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2021 CutefishOS Team.
+ * Copyright (C) 2026 Project Aevis Contributors.
  *
  * Author:     revenmartin <revenmartin@gmail.com>
  *
@@ -153,8 +154,8 @@ Item {
 
         ColorOverlay {
             id: _selectedColorOverlay
-            anchors.fill: _iconItem
-            source: _iconItem
+            anchors.fill: _image.visible ? _image : _icon
+            source: _image.visible ? _image : _icon
             color: FishUI.Theme.highlightColor
             opacity: 0.5
             visible: control.selected
@@ -162,8 +163,8 @@ Item {
 
         ColorOverlay {
             id: _hoveredColorOverlay
-            anchors.fill: _iconItem
-            source: _iconItem
+            anchors.fill: _image.visible ? _image : _icon
+            source: _image.visible ? _image : _icon
             color: "white"
             opacity: 0.3
             visible: control.hovered && !control.selected

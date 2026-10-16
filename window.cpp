@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2021 CutefishOS Team.
+ * Copyright (C) 2026 Project Aevis Contributors.
  *
  * Author:     Reion Wong <reion@cutefishos.com>
  *
@@ -25,6 +26,9 @@
 #include <QQuickWindow>
 #include <QPixmapCache>
 #include <QTimer>
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
 
 Window::Window(QObject *parent)
     : QQmlApplicationEngine(parent)
@@ -82,7 +86,13 @@ bool Window::eventFilter(QObject *obj, QEvent *e)
     if (e->type() == QEvent::Close) {
         QPixmapCache::clear();
         clearComponentCache();
+        trimComponentCache();
         deleteLater();
+#ifdef __GLIBC__
+        QTimer::singleShot(200, []() {
+            malloc_trim(0);
+        });
+#endif
         e->accept();
     }
 

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2021 CutefishOS Team.
+ * Copyright (C) 2026 Project Aevis Contributors.
  *
  * Author:     revenmartin <revenmartin@gmail.com>
  *
@@ -26,8 +27,10 @@ Settings {
     // default location follows the host application's name, which would give
     // the two hosts different preferences and silently reset the desktop's
     // icon size the first time the shell started.
-    location: StandardPaths.writableLocation(StandardPaths.GenericConfigLocation)
-              + "/cutefishos/cutefish-filemanager.conf"
+    location: (StandardPaths.locate(StandardPaths.GenericConfigLocation, "aevis/aevis-filemanager.conf") !== "" ||
+               !StandardPaths.locate(StandardPaths.GenericConfigLocation, "cutefishos/cutefish-filemanager.conf"))
+              ? StandardPaths.writableLocation(StandardPaths.GenericConfigLocation) + "/aevis/aevis-filemanager.conf"
+              : StandardPaths.writableLocation(StandardPaths.GenericConfigLocation) + "/cutefishos/cutefish-filemanager.conf"
 
     property int viewMethod: 1          // controls display mode: list or grid
 

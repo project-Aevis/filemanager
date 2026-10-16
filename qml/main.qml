@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2021 CutefishOS Team.
+ * Copyright (C) 2026 Project Aevis Contributors.
  *
  * Author:     revenmartin <revenmartin@gmail.com>
  *
@@ -213,7 +214,7 @@ FishUI.Window {
     FishUI.AboutDialog {
         id: _aboutDialog
         name: qsTr("File Manager")
-        description: qsTr("A file manager designed for CutefishOS.")
+        description: qsTr("A file manager designed for Project Aevis.")
         iconSource: "image://icontheme/file-system-manager"
     }
 
